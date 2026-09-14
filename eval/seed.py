@@ -44,6 +44,7 @@ def seed_benchmark(session: Session, benchmark: list[dict] = BENCHMARK) -> list[
                     delivery_id=delivery_id,
                     action_type=row["action_type"],
                     payload={
+                        "summary": row["title"],
                         "labels": row["predicted_labels"],
                         "duplicate_of": row["predicted_duplicate_of"],
                     },
