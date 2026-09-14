@@ -9,6 +9,10 @@ const nextConfig = {
   // package-lock.json in the user's home directory that Next.js would
   // otherwise mistake for a monorepo root above this project.
   outputFileTracingRoot: __dirname,
+  // Produces .next/standalone: a minimal server bundle with only the
+  // node_modules it actually needs, so the Docker image doesn't have to
+  // ship the full node_modules tree.
+  output: "standalone",
 };
 
 export default nextConfig;

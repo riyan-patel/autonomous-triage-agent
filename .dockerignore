@@ -1,0 +1,10 @@
+# Applies to any build whose context is the repo root (currently just
+# worker/Dockerfile, which needs sibling packages alongside it).
+**/.venv
+**/__pycache__
+**/*.pyc
+**/tests
+**/.pytest_cache
+**/node_modules
+**/.next
+.git

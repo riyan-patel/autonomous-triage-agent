@@ -6,9 +6,11 @@ summarizes it, labels it, detects duplicates, suggests a reviewer, and
 drafts a first response — through a standardized MCP tool layer, with a
 web dashboard and a measured accuracy number.
 
-> **Status: scaffolding.** This repo currently holds the architecture and
-> project skeleton. Components are being implemented in the build order
-> below.
+> **Status: build order steps 1-9 implemented** (webhook ingress through
+> deploy — see below); step 10 (polish/demo) remains. Every component has
+> its own tests plus at least one live integration test against real
+> Postgres/Redis; only the real Anthropic/GitHub API calls are untested
+> live, since no API keys are configured in this dev environment.
 
 ## Why this exists
 
@@ -123,6 +125,28 @@ docker compose up -d   # starts Postgres (pgvector) + Redis
 
 Individual services are documented in their own directories as they're
 implemented.
+
+## Running the full stack
+
+```bash
+cp .env.example .env   # fill in GITHUB_WEBHOOK_SECRET, ANTHROPIC_API_KEY, etc.
+docker compose up -d --build
+```
+
+Brings up all five containers: `postgres`, `redis`, `webhook-ingress`
+(`:8000`), `worker`, and `dashboard` (`:3000`). `db/migrations/0001_init.sql`
+applies automatically on a fresh `postgres` volume; anything after `0001`
+needs applying by hand (see `db/README.md`) since it postdates the
+container's first init.
+
+Without `ANTHROPIC_API_KEY`/`GITHUB_TOKEN` set, the stack still runs -
+webhook ingestion, queuing, retrieval/embedding, and the dashboard all
+work; `worker` fails cleanly at the LLM call on any actual issue event
+until a real key is set. mcp-server has no container of its own: `worker`
+imports it in-process (see `worker/pipeline.py`) rather than spawning it
+as a separate MCP server, so its code just ships inside the `worker`
+image. `eval` isn't containerized either - it's a one-off CLI
+(`python -m eval.main`), not an always-on service.
 
 ## License
 
