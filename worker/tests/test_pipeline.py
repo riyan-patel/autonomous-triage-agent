@@ -31,15 +31,21 @@ def make_output(confidence: float, **overrides) -> TriageOutput:
     return TriageOutput(**defaults)
 
 
+def noop_audit(delivery_id, repo, issue_number, output, decision, dry_run):
+    pass
+
+
 def test_run_triage_acts_on_high_confidence():
     llm = FakeLLMClient(make_output(0.95))
     acted_with = []
 
     result = run_triage(
         make_payload(),
+        delivery_id="delivery-1",
         retrieval_fn=lambda repo, issue_number, title, body, state: [],
         llm_client=llm,
         act_fn=lambda repo, issue_number, output: acted_with.append((repo, issue_number, output)),
+        audit_fn=noop_audit,
     )
 
     assert result.status == "acted"
@@ -56,9 +62,11 @@ def test_run_triage_escalates_without_acting():
 
     result = run_triage(
         make_payload(),
+        delivery_id="delivery-2",
         retrieval_fn=lambda repo, issue_number, title, body, state: [],
         llm_client=llm,
         act_fn=lambda repo, issue_number, output: acted_with.append((repo, issue_number, output)),
+        audit_fn=noop_audit,
     )
 
     assert result.status == "escalated"
@@ -72,12 +80,33 @@ def test_run_triage_passes_retrieval_results_into_prompt():
 
     run_triage(
         make_payload(),
+        delivery_id="delivery-3",
         retrieval_fn=lambda repo, issue_number, title, body, state: [
             SimilarIssueContext(issue_number=7, title="Near duplicate crash", state="open", distance=0.05)
         ],
         llm_client=llm,
         act_fn=lambda repo, issue_number, output: None,
+        audit_fn=noop_audit,
     )
 
     assert "Near duplicate crash" in llm.last_prompt
     assert "#7" in llm.last_prompt
+
+
+def test_run_triage_calls_audit_fn_with_decision():
+    llm = FakeLLMClient(make_output(0.95))
+    audit_calls = []
+
+    def capture_audit(delivery_id, repo, issue_number, output, decision, dry_run):
+        audit_calls.append((delivery_id, repo, issue_number, decision.action.value, dry_run))
+
+    run_triage(
+        make_payload(),
+        delivery_id="delivery-4",
+        retrieval_fn=lambda repo, issue_number, title, body, state: [],
+        llm_client=llm,
+        act_fn=lambda repo, issue_number, output: None,
+        audit_fn=capture_audit,
+    )
+
+    assert audit_calls == [("delivery-4", "acme/widgets", 42, "act", True)]

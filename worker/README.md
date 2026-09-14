@@ -18,14 +18,29 @@ payload and calls `pipeline.run_triage`, which wires together:
    `post_comment`, `assign_reviewer`, `link_duplicate` as appropriate
    (dry-run by default, so safe without a GitHub token).
 
-`pipeline.run_triage` takes `retrieval_fn`, `llm_client`, and `act_fn` as
-optional injectable seams (defaulting to the real implementations above),
-so tests exercise the orchestration logic with fakes instead of needing a
-live DB, model, or API key. `tests/test_pipeline_live.py` is the exception
-— it exercises the *real* retrieval layer and mcp-server (only the LLM
-call is faked, since no `ANTHROPIC_API_KEY` is configured here) to prove
-the cross-package wiring genuinely works, not just each package in
+`pipeline.run_triage` takes `retrieval_fn`, `llm_client`, `act_fn`, and
+`audit_fn` as optional injectable seams (defaulting to the real
+implementations above), so tests exercise the orchestration logic with
+fakes instead of needing a live DB, model, or API key.
+`tests/test_pipeline_live.py` is the exception — it exercises the *real*
+retrieval layer, mcp-server, and audit write (only the LLM call is
+faked, since no `ANTHROPIC_API_KEY` is configured here) to prove the
+cross-package wiring genuinely works, not just each package in
 isolation. It skips cleanly if Postgres isn't reachable.
+
+Guardrails/reliability (build order step 6), on top of what step 2/3
+already had (retry-with-backoff at enqueue, no-spam idempotency):
+
+- **Audit log** — every triage decision (act or escalate) is written to
+  `actions` via `_default_audit`, keyed by `(delivery_id, action_type)` so
+  a retried job re-recording the same decision is a DB-level no-op too.
+  This is also the data source the eval harness (step 8) will read from.
+- **GitHub API rate-limit backoff** — lives in mcp-server (see its
+  README): `GitHubClient._call` retries 403/429 honoring `Retry-After`.
+- **Dead-letter visibility** (`dead_letter.py`) — `list_dead_letters(...)`
+  surfaces jobs RQ parked in its `FailedJobRegistry` after exhausting
+  retries, in a structured form instead of requiring someone to poke at
+  Redis directly.
 
 Not yet implemented: per-repo label taxonomy (currently a static default —
 fetching a repo's real labels needs a GitHub API call not yet in

@@ -40,7 +40,7 @@ def enqueue_issue_event(delivery_id: str, event: str, payload: dict) -> tuple[st
     job = get_queue().enqueue(
         "worker.jobs.process_issue_event",
         job_id=delivery_id,
-        kwargs={"event": event, "payload": payload},
+        kwargs={"event": event, "payload": payload, "delivery_id": delivery_id},
         retry=RETRY_POLICY,
     )
     return job.id, False

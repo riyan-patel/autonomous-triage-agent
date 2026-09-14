@@ -19,9 +19,9 @@ def test_processes_well_formed_event():
     # here we just stub run_triage out.
     canned = TriageResult(repo="acme/widgets", issue_number=42, status="acted", confidence=0.92, reasons=["ok"])
     with patch("worker.jobs.run_triage", return_value=canned) as mock_run_triage:
-        result = process_issue_event("issues", make_payload())
+        result = process_issue_event("issues", make_payload(), delivery_id="delivery-1")
 
-    mock_run_triage.assert_called_once()
+    mock_run_triage.assert_called_once_with(make_payload(), delivery_id="delivery-1")
     assert result == {
         "repo": "acme/widgets",
         "issue_number": 42,
@@ -34,7 +34,7 @@ def test_skips_payload_missing_issue():
     payload = make_payload()
     del payload["issue"]
 
-    result = process_issue_event("issues", payload)
+    result = process_issue_event("issues", payload, delivery_id="delivery-2")
 
     assert result["status"] == "invalid_payload"
 
@@ -43,6 +43,6 @@ def test_skips_payload_missing_repository():
     payload = make_payload()
     del payload["repository"]
 
-    result = process_issue_event("issues", payload)
+    result = process_issue_event("issues", payload, delivery_id="delivery-3")
 
     assert result["status"] == "invalid_payload"

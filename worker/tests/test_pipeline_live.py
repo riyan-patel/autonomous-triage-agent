@@ -41,6 +41,11 @@ def live_repo():
     repo = f"acme/pipeline-live-{uuid.uuid4().hex[:8]}"
     yield repo
     with engine.begin() as conn:
+        # actions.issue_id has no ON DELETE CASCADE, so audit rows go first.
+        conn.execute(
+            text("DELETE FROM actions WHERE issue_id IN (SELECT id FROM issues WHERE repo_full_name = :repo)"),
+            {"repo": repo},
+        )
         conn.execute(text("DELETE FROM issues WHERE repo_full_name = :repo"), {"repo": repo})
 
 
@@ -56,8 +61,21 @@ def test_full_pipeline_acts_through_real_retrieval_and_mcp_tools(live_repo):
         )
     )
 
-    result = run_triage(payload, retrieval_fn=_default_retrieval, llm_client=llm)
+    result = run_triage(payload, delivery_id="live-test-delivery-1", retrieval_fn=_default_retrieval, llm_client=llm)
 
     assert result.status == "acted"
     assert result.repo == live_repo
     assert result.confidence == 0.95
+
+    # the default audit_fn should have written a real row to actions.
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT delivery_id, action_type, confidence, dry_run FROM actions "
+                 "WHERE issue_id IN (SELECT id FROM issues WHERE repo_full_name = :repo)"),
+            {"repo": live_repo},
+        ).one()
+    assert row.delivery_id == "live-test-delivery-1"
+    assert row.action_type == "act"
+    assert row.confidence == pytest.approx(0.95)
+    assert row.dry_run is True

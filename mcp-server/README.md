@@ -23,6 +23,10 @@ layer:
 - **No-spam idempotency** — `post_comment` and `link_duplicate` check for
   the agent's own marker (`AGENT_COMMENT_MARKER`) in existing comments and
   skip posting a second time on the same issue.
+- **Rate-limit-aware retry** (`GitHubClient._call`) — on a 403/429 from
+  GitHub, honors the `Retry-After` header if present, else backs off
+  exponentially, up to 3 attempts. Any other status (404, 422, ...) is a
+  real error and is raised immediately rather than retried.
 
 Not yet implemented: GitHub App installation-token auth. `GITHUB_TOKEN`
 (a personal access token) is the local-dev auth path for now; wiring the
