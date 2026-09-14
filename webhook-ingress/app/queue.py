@@ -1,10 +1,15 @@
 from functools import lru_cache
 
 import redis
-from rq import Queue
+from rq import Queue, Retry
 from rq.job import Job
 
 from .config import settings
+
+# Transient failures (LLM/GitHub API hiccups) get retried with backoff;
+# MalformedEventError is deliberately excluded from retry in worker/jobs.py
+# since retrying a permanently-bad payload just wastes attempts.
+RETRY_POLICY = Retry(max=3, interval=[10, 30, 60])
 
 
 @lru_cache(maxsize=1)
@@ -36,5 +41,6 @@ def enqueue_issue_event(delivery_id: str, event: str, payload: dict) -> tuple[st
         "worker.jobs.process_issue_event",
         job_id=delivery_id,
         kwargs={"event": event, "payload": payload},
+        retry=RETRY_POLICY,
     )
     return job.id, False
