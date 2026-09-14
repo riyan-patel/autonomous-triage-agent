@@ -1,4 +1,7 @@
+from unittest.mock import patch
+
 from worker.jobs import process_issue_event
+from worker.pipeline import TriageResult
 
 
 def make_payload(action: str = "opened") -> dict:
@@ -10,11 +13,20 @@ def make_payload(action: str = "opened") -> dict:
 
 
 def test_processes_well_formed_event():
-    result = process_issue_event("issues", make_payload())
+    # jobs.py's own job is extracting fields + delegating to run_triage and
+    # shaping the result dict - the full retrieval/agent-core/mcp-server
+    # glue is covered separately in tests/test_pipeline.py with fakes, so
+    # here we just stub run_triage out.
+    canned = TriageResult(repo="acme/widgets", issue_number=42, status="acted", confidence=0.92, reasons=["ok"])
+    with patch("worker.jobs.run_triage", return_value=canned) as mock_run_triage:
+        result = process_issue_event("issues", make_payload())
+
+    mock_run_triage.assert_called_once()
     assert result == {
         "repo": "acme/widgets",
         "issue_number": 42,
-        "status": "not_implemented",
+        "status": "acted",
+        "confidence": 0.92,
     }
 
 

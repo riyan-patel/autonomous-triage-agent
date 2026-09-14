@@ -2,3 +2,9 @@ rq
 redis
 sqlalchemy
 psycopg[binary]
+
+# worker drives retrieval + agent-core + mcp-server directly (see
+# pipeline.py), so it needs their runtime dependencies too.
+-r ../agent-core/requirements.txt
+-r ../retrieval/requirements.txt
+-r ../mcp-server/requirements.txt

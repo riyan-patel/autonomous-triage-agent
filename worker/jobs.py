@@ -29,4 +29,9 @@ def process_issue_event(event: str, payload: dict) -> dict:
     result = run_triage(payload)
 
     logger.info("triage result for %s#%s: %s", repo, issue_number, result.status)
-    return {"repo": result.repo, "issue_number": result.issue_number, "status": result.status}
+    return {
+        "repo": result.repo,
+        "issue_number": result.issue_number,
+        "status": result.status,
+        "confidence": result.confidence,
+    }

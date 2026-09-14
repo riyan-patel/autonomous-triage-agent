@@ -1,3 +1,4 @@
 pgvector
 sqlalchemy
 psycopg[binary]
+sentence-transformers

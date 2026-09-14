@@ -5,23 +5,44 @@ core, and handles retries/backoff/idempotency via delivery ID dedupe.
 
 ## Status
 
-Implemented: the RQ worker process, and `process_issue_event` — the job
-entry point webhook-ingress enqueues by import path. It validates the
-payload shape and calls into a pipeline stub (`pipeline.py`).
+Implemented: the full pipeline. `jobs.process_issue_event` validates the
+payload and calls `pipeline.run_triage`, which wires together:
 
-Not yet implemented: the actual triage pipeline (retrieval, LLM call,
-MCP tool actions — build order steps 3-5). `pipeline.run_triage` is a
-placeholder that returns `status="not_implemented"` so the queue/worker
-plumbing is provable end-to-end before the agent logic exists.
+1. **retrieval** — embeds the issue (local `sentence-transformers` model),
+   upserts it into Postgres/pgvector, and runs k-NN cosine search for
+   similar/duplicate issues in the same repo.
+2. **agent-core** — builds the prompt from the issue + retrieved context +
+   a static default label taxonomy, calls the LLM for structured output,
+   and applies the confidence-gated act-vs-escalate policy.
+3. **mcp-server** — on an "act" decision, calls `apply_labels`,
+   `post_comment`, `assign_reviewer`, `link_duplicate` as appropriate
+   (dry-run by default, so safe without a GitHub token).
 
-Retry policy (3 attempts, 10s/30s/60s backoff) is configured at enqueue
-time in `webhook-ingress/app/queue.py` (`RETRY_POLICY`) and applies to
-transient failures — an exception raised out of `process_issue_event`.
-A malformed payload (missing `issue`/`repository` fields) is *not*
-treated as retryable: it's logged and returned as
-`{"status": "invalid_payload"}` instead of raised, since retrying a
-permanently-bad payload would just burn all 3 attempts on a guaranteed
-failure.
+`pipeline.run_triage` takes `retrieval_fn`, `llm_client`, and `act_fn` as
+optional injectable seams (defaulting to the real implementations above),
+so tests exercise the orchestration logic with fakes instead of needing a
+live DB, model, or API key. `tests/test_pipeline_live.py` is the exception
+— it exercises the *real* retrieval layer and mcp-server (only the LLM
+call is faked, since no `ANTHROPIC_API_KEY` is configured here) to prove
+the cross-package wiring genuinely works, not just each package in
+isolation. It skips cleanly if Postgres isn't reachable.
+
+Not yet implemented: per-repo label taxonomy (currently a static default —
+fetching a repo's real labels needs a GitHub API call not yet in
+mcp-server's tool surface) and the recent-commit-author reviewer fallback.
+
+### A real bug this caught
+
+mcp-server, agent-core, and retrieval live in sibling directories with
+hyphens in their names (`mcp-server/mcp_server`, `agent-core/agent_core`),
+so `pipeline.py` bootstraps `sys.path` to make them importable. Wiring
+this up live also surfaced that RQ's default `Worker` forks a subprocess
+per job — which either reloads the embedding model on every single job,
+or on macOS crashes outright (`SIGABRT`, an Objective-C fork-safety guard
+tripping when the forked child touches PyTorch/Accelerate). `main.py`
+uses `SimpleWorker` (no fork-per-job) instead, which fixes both: the
+pipeline's embedder/DB engine/LLM client singletons actually stay warm
+across jobs.
 
 ## Local development
 
@@ -30,15 +51,18 @@ cd worker
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-# run the test suite
+# run the test suite (needs Postgres up for test_pipeline_live.py, which
+# skips cleanly if it isn't - docker compose up -d postgres from repo root)
 pytest
 
-# run the worker against real Redis (docker compose up -d redis)
+# run the worker for real (needs Postgres + Redis up)
+export DATABASE_URL=postgresql+psycopg://triage:triage@localhost:5432/triage_agent
 export REDIS_URL=redis://localhost:6379/0
+export ANTHROPIC_API_KEY=...   # required for a real triage decision
 python -m worker.main   # run from the repo root, not from worker/
 ```
 
-Note: the worker is imported as the dotted path `worker.jobs` (matching
-what webhook-ingress enqueues by name), so `python -m worker.main` must
-be run with the repo root on `PYTHONPATH` — running it from inside the
-`worker/` directory itself won't resolve the package correctly.
+Without `ANTHROPIC_API_KEY` set, the worker still embeds/indexes the
+issue and finds similar issues, then fails cleanly at the LLM call - a
+useful way to sanity-check the retrieval half of the pipeline without an
+API key.
