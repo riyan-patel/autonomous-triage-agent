@@ -51,6 +51,21 @@ class Action(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Review(Base):
+    """Human approve/reject decision on an escalated action, recorded by
+    the dashboard (build order step 7). Executing an approved action
+    against GitHub is a follow-up - this table only records the decision."""
+
+    __tablename__ = "reviews"
+    __table_args__ = (UniqueConstraint("action_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id"), nullable=False)
+    decision: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewer: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class EvalLabel(Base):
     __tablename__ = "eval_labels"
 
