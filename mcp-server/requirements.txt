@@ -1,2 +1,2 @@
-mcp
-PyGithub
+mcp>=2.0,<3
+PyGithub>=2.0,<3
