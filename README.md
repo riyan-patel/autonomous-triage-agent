@@ -6,11 +6,6 @@ summarizes it, labels it, detects duplicates, suggests a reviewer, and
 drafts a first response — through a standardized MCP tool layer, with a
 web dashboard and a measured accuracy number.
 
-> **Status: build order steps 1-9 implemented** (webhook ingress through
-> deploy — see below); step 10 (polish/demo) remains. Every component has
-> its own tests plus at least one live integration test against real
-> Postgres/Redis; only the real Anthropic/GitHub API calls are untested
-> live, since no API keys are configured in this dev environment.
 
 ## Why this exists
 
