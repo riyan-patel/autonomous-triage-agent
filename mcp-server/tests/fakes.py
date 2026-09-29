@@ -30,12 +30,35 @@ class FakeIssue:
         return self.comments
 
 
+class FakeContentFile:
+    def __init__(self, text: str) -> None:
+        self.decoded_content = text.encode("utf-8")
+
+
+class FakeLabel:
+    def __init__(self, name: str, description: str = "") -> None:
+        self.name = name
+        self.description = description
+
+
 class FakeRepo:
     def __init__(self) -> None:
         self.issues: dict[int, FakeIssue] = {}
+        self.files: dict[str, str] = {}
+        self.labels: list[FakeLabel] = []
 
     def get_issue(self, number: int) -> FakeIssue:
         return self.issues.setdefault(number, FakeIssue(number))
+
+    def get_contents(self, path: str) -> FakeContentFile:
+        from github import GithubException
+
+        if path not in self.files:
+            raise GithubException(404, {"message": "Not Found"}, {})
+        return FakeContentFile(self.files[path])
+
+    def get_labels(self) -> list[FakeLabel]:
+        return self.labels
 
 
 class FakeGithub:

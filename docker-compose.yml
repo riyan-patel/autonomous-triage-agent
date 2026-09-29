@@ -37,6 +37,7 @@ services:
     environment:
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       REDIS_URL: redis://redis:6379/0
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -51,7 +52,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
       AUTONOMY_CONFIDENCE_THRESHOLD: ${AUTONOMY_CONFIDENCE_THRESHOLD:-0.85}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       DRY_RUN: ${DRY_RUN:-true}
@@ -69,6 +71,8 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: postgresql://triage:triage@postgres:5432/triage_agent
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      WEBHOOK_INGRESS_URL: http://webhook-ingress:8000
     depends_on:
       postgres:
         condition: service_healthy

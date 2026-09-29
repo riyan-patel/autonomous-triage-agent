@@ -1,7 +1,8 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from agent_core.llm import TOOL_NAME, AnthropicLLMClient
+from agent_core.llm import TOOL_NAME, AnthropicLLMClient, GeminiLLMClient
 from agent_core.schema import IssueType, Severity
 
 
@@ -53,3 +54,46 @@ def test_generate_triage_raises_if_tool_not_called():
             assert False, "expected ValueError"
         except ValueError as exc:
             assert "did not call" in str(exc)
+
+
+def test_gemini_generate_triage_parses_json_response():
+    payload = {
+        "summary": "Crash on launch",
+        "type": IssueType.BUG.value,
+        "severity": Severity.HIGH.value,
+        "labels": ["bug"],
+        "duplicate_of": None,
+        "suggested_reviewer": None,
+        "draft_reply": "Thanks for the report.",
+        "confidence": 0.9,
+    }
+
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = SimpleNamespace(text=json.dumps(payload))
+        mock_client_cls.return_value = mock_client
+
+        client = GeminiLLMClient(api_key="test-key", model="gemini-flash-lite-latest")
+        output = client.generate_triage("some prompt")
+
+    assert output.summary == "Crash on launch"
+    assert output.confidence == 0.9
+
+    call_kwargs = mock_client.models.generate_content.call_args.kwargs
+    assert call_kwargs["model"] == "gemini-flash-lite-latest"
+    assert call_kwargs["contents"] == "some prompt"
+
+
+def test_gemini_generate_triage_raises_if_no_text():
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = SimpleNamespace(text="")
+        mock_client_cls.return_value = mock_client
+
+        client = GeminiLLMClient(api_key="test-key", model="gemini-flash-lite-latest")
+
+        try:
+            client.generate_triage("some prompt")
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "no content" in str(exc)

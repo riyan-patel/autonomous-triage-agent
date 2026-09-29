@@ -7,15 +7,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 WEBHOOK_SECRET = "test-secret"
+INTERNAL_TOKEN = "test-internal-token"
 
 
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", WEBHOOK_SECRET)
+    monkeypatch.setenv("INTERNAL_API_TOKEN", INTERNAL_TOKEN)
 
     from app import config, queue
 
     config.settings.github_webhook_secret = WEBHOOK_SECRET
+    config.settings.internal_api_token = INTERNAL_TOKEN
 
     fake_conn = fakeredis.FakeStrictRedis()
     queue.get_redis_connection.cache_clear()

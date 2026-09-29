@@ -4,7 +4,7 @@ import logging
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 
 from .config import settings
-from .queue import enqueue_issue_event
+from .queue import enqueue_approval_execution, enqueue_issue_event
 from .signature import verify_signature
 
 logger = logging.getLogger("webhook-ingress")
@@ -58,5 +58,25 @@ async def github_webhook(
         logger.info("duplicate delivery %s ignored", x_github_delivery)
     else:
         logger.info("enqueued job %s for delivery %s (action=%s)", job_id, x_github_delivery, action)
+
+    return Response(status_code=202)
+
+
+@app.post("/internal/approvals/{action_id}/execute")
+def execute_approval(action_id: int, x_internal_token: str | None = Header(default=None)) -> Response:
+    """Triggered by the dashboard right after a human clicks Approve on an
+    escalated action - enqueues the worker job that actually calls
+    mcp-server's tools against GitHub. Fails closed: an unset
+    INTERNAL_API_TOKEN means this endpoint is unreachable, same posture as
+    an unset GITHUB_WEBHOOK_SECRET on /webhooks/github."""
+    if not settings.internal_api_token or x_internal_token != settings.internal_api_token:
+        raise HTTPException(status_code=401, detail="invalid internal token")
+
+    job_id, was_duplicate = enqueue_approval_execution(action_id)
+
+    if was_duplicate:
+        logger.info("duplicate approval-execution request for action %s ignored", action_id)
+    else:
+        logger.info("enqueued job %s to execute approved action %s", job_id, action_id)
 
     return Response(status_code=202)

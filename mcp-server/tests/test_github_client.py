@@ -90,3 +90,47 @@ def test_search_issues_respects_limit():
     results = client.search_issues("acme/widgets", "bug", limit=2)
 
     assert len(results) == 2
+
+
+def test_get_file_contents_returns_decoded_text():
+    github = FakeGithub()
+    github.get_repo("acme/widgets").files["CODEOWNERS"] = "* @acme/maintainers\n"
+    client = GitHubClient(github, dry_run=False)
+
+    content = client.get_file_contents("acme/widgets", "CODEOWNERS")
+
+    assert content == "* @acme/maintainers\n"
+
+
+def test_get_file_contents_returns_none_when_missing():
+    github = FakeGithub()
+    client = GitHubClient(github, dry_run=False)
+
+    content = client.get_file_contents("acme/widgets", "CODEOWNERS")
+
+    assert content is None
+
+
+def test_list_labels_returns_name_and_description():
+    from .fakes import FakeLabel
+
+    github = FakeGithub()
+    github.get_repo("acme/widgets").labels = [
+        FakeLabel("bug", "Something isn't working"),
+        FakeLabel("enhancement", ""),
+    ]
+    client = GitHubClient(github, dry_run=False)
+
+    labels = client.list_labels("acme/widgets")
+
+    assert labels == [
+        {"name": "bug", "description": "Something isn't working"},
+        {"name": "enhancement", "description": ""},
+    ]
+
+
+def test_list_labels_empty_repo():
+    github = FakeGithub()
+    client = GitHubClient(github, dry_run=False)
+
+    assert client.list_labels("acme/widgets") == []

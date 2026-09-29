@@ -44,3 +44,24 @@ def enqueue_issue_event(delivery_id: str, event: str, payload: dict) -> tuple[st
         retry=RETRY_POLICY,
     )
     return job.id, False
+
+
+def enqueue_approval_execution(action_id: int) -> tuple[str, bool]:
+    """Enqueue a job for the worker to execute a human-approved escalated
+    action (dashboard "Approve" button - see worker/jobs.py:execute_approval).
+
+    job_id is derived from action_id so re-clicking Approve (or a retried
+    HTTP request) is a no-op instead of double-executing against GitHub.
+    """
+    connection = get_redis_connection()
+    job_id = f"approval-execute-{action_id}"
+    if Job.exists(job_id, connection=connection):
+        return job_id, True
+
+    job = get_queue().enqueue(
+        "worker.jobs.execute_approval",
+        job_id=job_id,
+        kwargs={"action_id": action_id},
+        retry=RETRY_POLICY,
+    )
+    return job.id, False

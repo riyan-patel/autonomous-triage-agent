@@ -126,6 +126,28 @@ class GitHubClient:
         self._call(lambda: issue.create_comment(body))
         return ActionResult(action="link_duplicate", ok=True)
 
+    def get_file_contents(self, repo: str, path: str) -> str | None:
+        """Read-only fetch of a file's text content, or None if it doesn't
+        exist. Not exposed as an MCP tool (the LLM never calls this
+        directly) - used internally by the pipeline to load CODEOWNERS for
+        reviewer routing."""
+        try:
+            content_file = self._call(lambda: self._github.get_repo(repo).get_contents(path))
+        except GithubException as exc:
+            if exc.status == 404:
+                return None
+            raise
+        return content_file.decoded_content.decode("utf-8")
+
+    def list_labels(self, repo: str) -> list[dict]:
+        """Read-only fetch of a repo's actual configured labels (name +
+        description), or [] if the repo has none/is unreachable. Not
+        exposed as an MCP tool (the LLM never calls this directly) - used
+        internally by the pipeline to build the real label taxonomy
+        instead of a hardcoded default."""
+        labels = self._call(lambda: list(self._github.get_repo(repo).get_labels()))
+        return [{"name": label.name, "description": label.description or ""} for label in labels]
+
     def search_issues(self, repo: str, query: str, limit: int = 10) -> list[dict]:
         results = self._call(lambda: list(self._github.search_issues(f"repo:{repo} {query}")))
         return [{"number": i.number, "title": i.title, "state": i.state} for i in results[:limit]]

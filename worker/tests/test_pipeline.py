@@ -93,6 +93,59 @@ def test_run_triage_passes_retrieval_results_into_prompt():
     assert "#7" in llm.last_prompt
 
 
+def test_run_triage_overrides_suggested_reviewer_from_reviewer_fn():
+    llm = FakeLLMClient(make_output(0.95, suggested_reviewer="llm-guessed-user"))
+    acted_with = []
+
+    run_triage(
+        make_payload(),
+        delivery_id="delivery-5",
+        retrieval_fn=lambda repo, issue_number, title, body, state: [],
+        llm_client=llm,
+        act_fn=lambda repo, issue_number, output: acted_with.append(output),
+        audit_fn=noop_audit,
+        reviewer_fn=lambda repo, text: ["@acme/backend-team"],
+    )
+
+    assert acted_with[0].suggested_reviewer == "@acme/backend-team"
+
+
+def test_run_triage_clears_ungrounded_reviewer_guess_when_no_match():
+    llm = FakeLLMClient(make_output(0.95, suggested_reviewer="llm-guessed-user"))
+    acted_with = []
+
+    run_triage(
+        make_payload(),
+        delivery_id="delivery-6",
+        retrieval_fn=lambda repo, issue_number, title, body, state: [],
+        llm_client=llm,
+        act_fn=lambda repo, issue_number, output: acted_with.append(output),
+        audit_fn=noop_audit,
+        reviewer_fn=lambda repo, text: [],
+    )
+
+    assert acted_with[0].suggested_reviewer is None
+
+
+def test_run_triage_uses_label_taxonomy_fn_in_prompt():
+    from agent_core.types import LabelSpec
+
+    llm = FakeLLMClient(make_output(0.9))
+
+    run_triage(
+        make_payload(),
+        delivery_id="delivery-7",
+        retrieval_fn=lambda repo, issue_number, title, body, state: [],
+        llm_client=llm,
+        act_fn=lambda repo, issue_number, output: None,
+        audit_fn=noop_audit,
+        label_taxonomy_fn=lambda repo: [LabelSpec("triage", "Needs a first look")],
+    )
+
+    assert "triage" in llm.last_prompt
+    assert "Needs a first look" in llm.last_prompt
+
+
 def test_run_triage_calls_audit_fn_with_decision():
     llm = FakeLLMClient(make_output(0.95))
     audit_calls = []

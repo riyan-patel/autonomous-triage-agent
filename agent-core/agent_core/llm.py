@@ -47,3 +47,35 @@ class AnthropicLLMClient(LLMClient):
                 return TriageOutput.model_validate(block.input)
 
         raise ValueError(f"model did not call {TOOL_NAME}; got content types: {[b.type for b in response.content]}")
+
+
+class GeminiLLMClient(LLMClient):
+    """Forces structured output via Gemini's `response_schema` JSON mode,
+    the closest equivalent to Anthropic's forced tool-use here: the model
+    is constrained to emit JSON matching TriageOutput's schema directly."""
+
+    def __init__(self, api_key: str, model: str) -> None:
+        # Imported lazily so this module (and the fake used in tests) don't
+        # require the google-genai package or an API key to import.
+        from google import genai
+        from google.genai import types
+
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+        self._config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=TriageOutput,
+        )
+
+    def generate_triage(self, user_prompt: str) -> TriageOutput:
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_prompt,
+            config=self._config,
+        )
+
+        if not response.text:
+            raise ValueError("Gemini returned no content for triage generation")
+
+        return TriageOutput.model_validate_json(response.text)
