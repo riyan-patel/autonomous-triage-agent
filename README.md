@@ -3,18 +3,12 @@
 An always-on, autonomous AI agent that takes GitHub issue triage off a
 maintainer's plate. The moment a new issue is filed, it reads it,
 summarizes it, labels it, detects duplicates, suggests a reviewer, and
-drafts a first response — through a standardized MCP tool layer, with a
+drafts a first response, through a standardized MCP tool layer, with a
 web dashboard and a measured accuracy number.
-
-> **Status: build order steps 1-9 implemented** (webhook ingress through
-> deploy — see below); step 10 (polish/demo) remains. Every component has
-> its own tests plus at least one live integration test against real
-> Postgres/Redis; only the real Anthropic/GitHub API calls are untested
-> live, since no API keys are configured in this dev environment.
 
 ## Why this exists
 
-The LLM here is a commodity component that gets called — the actual
+The LLM here is a commodity component that gets called; the actual
 engineering is the system built around it: an event-driven backend, a
 real retrieval pipeline, reliability guarantees, a standardized MCP tool
 layer, and an evaluation harness that proves it works.
@@ -67,13 +61,42 @@ the rest).
           └──────┬───────┘
                  ▼
           ┌──────────────┐
-          │  Dashboard   │  (Next.js — live queue, actions, metrics)
+          │  Dashboard   │  (Next.js: live queue, actions, metrics)
           └──────────────┘
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full technical
 plan: component depth, reliability/safety engineering, and the evaluation
 methodology.
+
+## Proven live
+
+Everything below was confirmed working against real infrastructure, not
+mocks: a real (private) GitHub repo, a real LLM API, and the actual
+Redis/RQ queue, not a direct function call standing in for it.
+
+- **A real signed GitHub webhook**, HMAC-verified, flows through
+  `webhook-ingress` → Redis/RQ → `worker` → real GitHub writes (labels,
+  comment) on a live issue. Bad signatures are rejected (401); redelivering
+  the same delivery ID is deduped at the queue level (no double-processing).
+- **The LLM call is real** (Gemini, swappable to Claude via `LLM_PROVIDER`),
+  with structured JSON output validated against the same schema either
+  provider must satisfy.
+- **Reviewer routing is grounded, not guessed**: the agent reads the
+  repo's actual `CODEOWNERS` file and only assigns a reviewer when a real
+  pattern match exists. Confirmed live: an issue mentioning `worker/jobs.py`
+  correctly resolved to the right owner and was assigned on GitHub.
+- **Label taxonomy is fetched from the real repo**, not a hardcoded list;
+  it falls back to a small default set only if the repo has no labels or no
+  token is configured.
+- **The dashboard's Approve button actually executes**: clicking it
+  triggers a real HTTP call to `webhook-ingress`, which enqueues a real
+  worker job that calls mcp-server's tools against GitHub. Confirmed via
+  a real approve click flowing through the real queue to a real GitHub
+  write, with idempotency verified (re-clicking Approve doesn't double-act).
+- Confidence gating is real: on a genuinely low-confidence issue, the agent
+  escalates instead of acting, and nothing touches GitHub until a human
+  approves it from the dashboard.
 
 ## Repo layout
 
@@ -84,7 +107,7 @@ methodology.
 | `mcp-server/` | MCP server exposing GitHub actions as standardized tools (`apply_labels`, `post_comment`, `assign_reviewer`, `link_duplicate`, `search_issues`) |
 | `retrieval/` | Embedding + indexing pipeline, pgvector k-NN search for duplicates and reviewer routing |
 | `agent-core/` | The reasoning loop: prompt construction, structured output, confidence-gated decision policy |
-| `dashboard/` | Next.js dashboard: live triage queue, audit log, approve/reject UI, metrics |
+| `dashboard/` | Next.js dashboard: live triage queue with search/filter, a "Needs your review" section for escalated items, expandable per-issue detail, links out to the real GitHub issue, approve/reject that actually executes, and metrics |
 | `eval/` | Evaluation harness: labeled benchmark + accuracy/precision/recall metrics |
 | `db/` | Postgres schema + migrations |
 | `scripts/` | One-off / operational scripts (backfill, seed data, etc.) |
@@ -96,7 +119,7 @@ methodology.
 |---|---|
 | Backend / agent | Python, FastAPI |
 | Queue | Redis + RQ |
-| LLM | Swappable via API (Claude / GPT / Gemini) |
+| LLM | Swappable via `LLM_PROVIDER`: Anthropic (Claude) or Google (Gemini) implemented today |
 | Tool layer | MCP server (official Python MCP SDK) |
 | Embeddings + vectors | pgvector in Postgres |
 | Frontend | Next.js |
@@ -114,7 +137,7 @@ methodology.
 7. Dashboard
 8. Evaluation harness
 9. Deploy
-10. README + repo polish, demo
+10. README + repo polish, demo, live end-to-end verification
 
 ## Local development
 
@@ -129,7 +152,8 @@ implemented.
 ## Running the full stack
 
 ```bash
-cp .env.example .env   # fill in GITHUB_WEBHOOK_SECRET, ANTHROPIC_API_KEY, etc.
+cp .env.example .env   # fill in GITHUB_WEBHOOK_SECRET, GITHUB_TOKEN,
+                        # LLM_PROVIDER + its API key, INTERNAL_API_TOKEN
 docker compose up -d --build
 ```
 
@@ -139,10 +163,10 @@ applies automatically on a fresh `postgres` volume; anything after `0001`
 needs applying by hand (see `db/README.md`) since it postdates the
 container's first init.
 
-Without `ANTHROPIC_API_KEY`/`GITHUB_TOKEN` set, the stack still runs -
-webhook ingestion, queuing, retrieval/embedding, and the dashboard all
-work; `worker` fails cleanly at the LLM call on any actual issue event
-until a real key is set. mcp-server has no container of its own: `worker`
+Without an LLM API key/`GITHUB_TOKEN` set, the stack still runs - webhook
+ingestion, queuing, retrieval/embedding, and the dashboard all work;
+`worker` fails cleanly at the LLM call on any actual issue event until a
+real key is set. mcp-server has no container of its own: `worker`
 imports it in-process (see `worker/pipeline.py`) rather than spawning it
 as a separate MCP server, so its code just ships inside the `worker`
 image. `eval` isn't containerized either - it's a one-off CLI
@@ -150,4 +174,4 @@ image. `eval` isn't containerized either - it's a one-off CLI
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT, see [`LICENSE`](LICENSE).
